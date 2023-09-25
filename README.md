@@ -19,38 +19,38 @@ to manually set the directory within each markdown file to run the scripts.
 
 The scripts have been tested on Windows with R version 4.3.1. The following packages are required to run all analyses:
 
-dplyr - 1.1.2
-tidyverse - 2.0.0
-gtools - 3.9.4
-knitr - 1.42
-data.table - 1.14.8
-ggplot2 - 3.4.2
-car - 3.1-2
-ggbeeswarm - 0.7.2
-ggrepel - 0.9.3
-readxl - 1.4.2
-data.table - 1.14.8
-openxlsx - 4.2.5.2
-ggpubr - 0.6.0
-rstatix - 0.7.2
-"ez" - 4.4-0
-ggsignif - 0.6.4
-RColorBrewer - 1.1-3
-emmeans - 1.8.5
-plotrix - 3.8-2
-sdamr - 0.2.0
-cowplot - 1.1.1
-psycho - 0.6.1
-ggridges - 0.5.4
-viridis - 0.6.4
-ggstance - 0.3.6
-ggdist - 3.3.0
-gghalves - 0.1.4
-ggpp - 0.5.4
-lme4 - 1.1-33
-stringr - 1.5.0
-effectsize - 0.8.6
-lmerTest - 3.1-3
+* dplyr - 1.1.2
+* tidyverse - 2.0.0
+* gtools - 3.9.4
+* knitr - 1.42
+* data.table - 1.14.8
+* ggplot2 - 3.4.2
+* car - 3.1-2
+* ggbeeswarm - 0.7.2
+* ggrepel - 0.9.3
+* readxl - 1.4.2
+* data.table - 1.14.8
+* openxlsx - 4.2.5.2
+* ggpubr - 0.6.0
+* rstatix - 0.7.2
+* "ez" - 4.4-0
+* ggsignif - 0.6.4
+* RColorBrewer - 1.1-3
+* emmeans - 1.8.5
+* plotrix - 3.8-2
+* sdamr - 0.2.0
+* cowplot - 1.1.1
+* psycho - 0.6.1
+* ggridges - 0.5.4
+* viridis - 0.6.4
+* ggstance - 0.3.6
+* ggdist - 3.3.0
+* gghalves - 0.1.4
+* ggpp - 0.5.4
+* lme4 - 1.1-33
+* stringr - 1.5.0
+* effectsize - 0.8.6
+* lmerTest - 3.1-3
 
 ## DDM
 
