@@ -1,0 +1,245 @@
+---
+title: "Pre.Post.Questionnaire.Analysis"
+author: "Michael Colwell"
+date: '2022-09-02'
+output: html_document
+---
+
+```{r libraries, echo=FALSE, include=FALSE}
+
+library(dplyr)
+library(tidyverse)
+library(gtools)
+library(knitr)
+library(data.table)
+library(ggplot2)
+library(car)
+library(ggbeeswarm)
+library(ggrepel)
+library(readxl)
+library(openxlsx)
+library('ez')
+library(rstatix)
+library(emmeans)
+library(pmxTools)
+library(lmerTest)
+
+
+
+```
+
+
+
+```{r pressure, echo=FALSE}
+
+##Load in relevant data
+
+setwd("C:/Users/micha/Desktop/DailyData/")
+
+Questionnaires <- read.csv("Cleaned_dataset_daily_pre_and_post.csv")
+
+setwd("C:/Users/micha/Desktop/DemographicData")
+
+Demographics <- read.xlsx("Demo4Analysis.xlsx") 
+
+QuestionnairesM <- Questionnaires %>% complete(Participant.ID, DayI, fill = list(value = 0))
+
+Demographics$Participant.ID <- as.factor(Demographics$Participant.ID)
+
+QuestionnairesM <- merge(QuestionnairesM, Demographics, by = "Participant.ID")
+
+removal_df <- subset(QuestionnairesM, Participant.ID != "P008")
+
+QuestionnairesMaster <- droplevels(removal_df)
+
+rm(Questionnaires)
+```
+
+
+```{r pressure, echo=FALSE}
+
+##Analysis of daily data of subjective questionnaires
+
+##Note: We are not using BDI data for analysis, as the measure requests the user to reflect on mood state during a window of time which is shorter than the treatment allocation period (7, 8 or 9 days).
+
+```
+
+```{r pressure, echo=FALSE}
+#VAS positive items model
+
+Vas_Pos_Model <- with(QuestionnairesMaster, lmer(VAS_pos ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Vas_Pos_Model, conf.int = TRUE)
+
+confint(Vas_Pos_Model, method="Wald")
+
+#VAS negative items model
+
+Vas_neg_Model <- with(QuestionnairesMaster, lmer(VAS_neg ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Vas_neg_Model, conf.int = TRUE)
+
+confint(Vas_neg_Model, method="Wald")
+
+############################################
+
+#Side effects daily models
+
+#Ap decrease model
+
+app_down_Model <- with(QuestionnairesMaster, lmer(Appetite..decreased ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(app_down_Model, conf.int = TRUE)
+
+confint(app_down_Model, method="Wald")
+
+#Ap increase model
+
+app_up_Model <- with(QuestionnairesMaster, lmer(Appetite..increased ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(app_up_Model, conf.int = TRUE)
+
+confint(app_up_Model, method="Wald")
+
+#Drowsiness_Fatigue
+
+drowsy_Model <- with(QuestionnairesMaster, lmer(Drowsiness.fatigue ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(drowsy_Model, conf.int = TRUE)
+
+confint(drowsy_Model, method="Wald")
+
+#Insomnia 
+
+insom_Model <- with(QuestionnairesMaster, lmer(Insomnia ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(insom_Model, conf.int = TRUE)
+
+confint(insom_Model, method="Wald")
+
+#Sexual side-effects
+
+sexse_Model <- with(QuestionnairesMaster, lmer(Sexual.side.effects ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(sexse_Model, conf.int = TRUE)
+
+confint(sexse_Model, method="Wald")
+
+#Sweating_model
+
+sweat_Model <- with(QuestionnairesMaster, lmer(Sweating ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(sweat_Model, conf.int = TRUE)
+
+confint(sweat_Model, method="Wald")
+
+#Tremors
+
+tremor_Model <- with(QuestionnairesMaster, lmer(Tremors ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(tremor_Model, conf.int = TRUE)
+
+confint(tremor_Model, method="Wald")
+
+#Agitation
+
+agitation_Model <- with(QuestionnairesMaster, lmer(Agitation ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(agitation_Model, conf.int = TRUE)
+
+confint(agitation_Model, method="Wald")
+
+#Anxiety
+
+anxiety_Model <- with(QuestionnairesMaster, lmer(Anxiety.Nervousness ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(anxiety_Model, conf.int = TRUE)
+
+confint(anxiety_Model, method="Wald")
+
+#Diarrhoea
+
+Diarrhoea_Model <- with(QuestionnairesMaster, lmer(Diarrhoea ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Diarrhoea_Model, conf.int = TRUE)
+
+confint(Diarrhoea_Model, method="Wald")
+
+#Dry Mouth
+
+Dry_Model <- with(QuestionnairesMaster, lmer(Dry.mouth ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Dry_Model, conf.int = TRUE)
+
+confint(Dry_Model, method="Wald")
+
+#Indigestion
+
+Indigestion_Model <- with(QuestionnairesMaster, lmer(Indigestion ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Indigestion_Model, conf.int = TRUE)
+
+confint(Indigestion_Model, method="Wald")
+
+#Nausea
+
+Nausea_Model <- with(QuestionnairesMaster, lmer(Nausea ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Nausea_Model, conf.int = TRUE)
+
+confint(Nausea_Model, method="Wald")
+
+#Upset_stomach
+
+Upset_stomach_model <- with(QuestionnairesMaster, lmer(Upset.stomach ~ Allocation + DayI + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Upset_stomach_model, conf.int = TRUE)
+
+confint(Upset_stomach_model, method="Wald")
+
+##
+
+```
+
+
+
+
+
+
+
+
+
+```
+

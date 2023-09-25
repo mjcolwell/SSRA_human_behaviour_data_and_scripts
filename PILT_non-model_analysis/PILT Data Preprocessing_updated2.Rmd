@@ -1,0 +1,633 @@
+---
+title: "Presentation PILT Script"
+author: "Michael Colwell"
+date: '2022-07-27'
+output: html_document
+---
+
+## Presentation PILT pre-processing script
+
+This script was made as an alternative to the MATLAB script for the FENCOG project by Michael Colwell (michael.colwell@psych.ox.ac.uk).
+
+Free to use for all.
+
+Before proceeding it is important to make sure all your files are labelled with the participant ID in the following format:
+
+P00X
+or 
+p0Xx
+
+It is robust to upper-case/lower-case letters, however if there are too many 0s it will fail to load it in.
+
+If you have a follow-up visit, make sure the file name includes 'v2', and this will be sorted considered a follow-up or PRE visit. 
+
+##Chunk 0: Set-up chunk
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+##Chunk 1: Loading required R packages
+
+```{r Chunk 1 - Libraries Setup, echo=FALSE, include=FALSE}
+
+library(dplyr)
+library(tidyverse)
+library(gtools)
+library(knitr)
+library(data.table)
+library(ggplot2)
+library(car)
+library(ggbeeswarm)
+library(ggrepel)
+library(readxl)
+library(data.table)
+library(openxlsx)
+library(ggpubr)
+library(rstatix)
+library("ez")
+library(ggsignif)
+library(RColorBrewer)
+library(emmeans)
+library(plotrix)
+library(sdamr)
+library(cowplot)
+library(lme4)
+library(stringr)
+library(ggridges)
+library(viridis)
+```
+
+#Chunk 2: Loading files into memory and creating an aggregate
+
+```{r Chunk 2 - Loading Files, message=FALSE, warning=FALSE, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+setwd("C:/Users/micha/Desktop/Updated_PILT")
+
+# Create an empty data frame to store the combined data
+combined_df <- data.frame()
+
+# Get a list of all .dat files in the directory
+dat_files <- list.files(pattern = "\\.dat$")
+
+# Loop through each .dat file
+for (file in dat_files) {
+  # Read the file using readLines()
+  lines <- readLines(file)
+
+  # Remove the first three lines
+  lines <- lines[-(1:3)]
+
+  # Extract the file name
+  file_name <- sub("\\.dat$", "", file)
+
+  # Check if the file name contains P001, P002, etc.
+  if (grepl("[Pp]\\d{3}", file_name)) {
+    # Check if there are lines remaining
+    if (length(lines) > 0) {
+      # Replace blank spaces with NA in each line
+      lines <- lapply(lines, function(line) {
+        words <- strsplit(line, "\\s+")[[1]]
+        words[words == ""] <- NA
+        return(words)
+      })
+
+      # Find the maximum number of elements in a line
+      max_elements <- max(sapply(lines, length))
+
+      # Create a matrix to store the data
+      data_matrix <- matrix(nrow = length(lines), ncol = max_elements)
+
+      # Fill the matrix with the data from the lines
+      for (i in seq_along(lines)) {
+        row <- lines[[i]]
+        data_matrix[i, 1:length(row)] <- row
+      }
+
+      # Convert the matrix to a data frame
+      df <- as.data.frame(data_matrix, stringsAsFactors = FALSE) # Ensure strings are treated as characters
+
+      # Add a column with the file name to the data frame
+      df <- cbind(FileName = file_name, df)
+
+      # Bind the data to the combined data frame
+      combined_df <- bind_rows(combined_df, df)
+    }
+  }
+}
+
+# Move first row as column names
+colnames(combined_df)[-1] <- combined_df[1, -1]
+combined_df <- combined_df[-1, ]
+
+# Move values from "win_out" to "loss_out" based on "trial_type"
+combined_df$loss_out[combined_df$trial_type == 2] <- combined_df$win_out[combined_df$trial_type == 2]
+combined_df$win_out[combined_df$trial_type == 2] <- NA
+
+## You'll need to change this one manually##
+combined_df <- rename(combined_df, file_name = FileName)
+
+# Split 'file_name' column into 'Participant.ID' and 'Visit'
+combined_df <- combined_df %>%
+  mutate(
+    ID <- str_extract(file_name, "(?<=^)[Pp]0*\\d+"),
+    PRE.POST = ifelse(str_detect(file_name, "v2"), "POST", "PRE")
+  )
+
+# Prune 'Participant.ID' column to first few letters
+combined_df$ID <- str_sub(combined_df$ID, 1, 4)
+
+# Convert 'Participant.ID' column to uppercase
+combined_df$ID <- toupper(combined_df$ID)
+
+combined_df <- combined_df %>%
+  select(ID, PRE.POST, everything())
+
+value_to_remove <- "run_number" # Specify the value to be removed
+combined_df <- combined_df[!(combined_df$run_number == value_to_remove), ]
+
+value_to_remove2 <- "Total" # Specify the value to be removed
+combined_df <- combined_df[!(combined_df$run_number == value_to_remove2), ]
+
+## Above code is duplicated intentionally.
+
+PILT <- combined_df
+
+## Check all the participant data is there
+
+unique_strings <- unique(combined_df$ID)
+summary <- data.frame(String = unique_strings, Count = length(unique_strings))
+
+print(summary)
+
+rm(data_matrix, df, lines, dat_files, file, file_name, i, max_elements, row, combined_df)
+```
+
+#Chunk 3: Initial pre-processing of data to prepare for analyses
+
+```{r Chunk 3 - Initial Preprocessing, message=FALSE, warning=FALSE, include=FALSE}
+
+PILT <- PILT %>% mutate(Optimal_choice = case_when((loss_out == 1) ~ "0", (loss_out == 0) ~ "1", (win_out == 1) ~ "1", (win_out == 0) ~ "0", TRUE ~ "NA"))
+
+PILT$Optimal_choice <- as.numeric(PILT$Optimal_choice)
+
+# RTs generation
+
+PILT <- PILT %>% transform(RT_hits = ifelse(Optimal_choice == 1, reaction_time, NA))
+
+PILT$reaction_time <- as.numeric(PILT$reaction_time)
+
+# Remove response times based on the 4000ms length of time allowed for choices in the Pessiglione et al. 2006 publication)
+
+PILT <- PILT %>% filter(reaction_time < 4000)
+
+# Create a seperate df for the learning curve
+
+PILT2 <- PILT
+
+PILT2$Optimal_choice <- as.numeric(PILT2$Optimal_choice)
+
+# Remove the first third of trials (period of learning), so you only have 20 trials per condition per run
+
+PILT$trial_number <- as.numeric(PILT$trial_number)
+
+PILT <- PILT %>% filter(trial_number > 19)
+
+PILT <- PILT %>% select(-file_name)
+```
+
+#Chunk 4 (Optional): Running initial data quality tests
+
+```{r Chunk 4 (Optional) - Initial quality checks, echo=FALSE}
+# create overall summary for identifying outliers
+
+#####
+
+PILT_Qual_Report <- PILT %>%
+  group_by(ID, PRE.POST) %>% ## Remove 'Research.Visit.Number' if not repeated-measures
+  summarise(Optimal_choice = sum(Optimal_choice, na.rm = TRUE), Response.time = mean(RT_hits, na.rm = TRUE))
+
+PILT_Qual_Report$PRE.POST <- as.factor(PILT_Qual_Report$PRE.POST)
+
+# Generate boxplots to check for outliers (at the IQR * 1.5 range) - Modify if not repeated-measures
+
+is_outlier <- function(x) {
+  return(x < quantile(x, 0.25) - 2.0 * IQR(x) | x > quantile(x, 0.75) + 2.0 * IQR(x))
+}
+
+PILT_Qual_Report %>%
+  group_by(PRE.POST) %>%
+  mutate(outlier = ifelse(is_outlier(Optimal_choice), PRE.POST, as.numeric(NA))) %>%
+  ggplot(aes(x = factor(PRE.POST), Optimal_choice)) +
+  scale_x_discrete(limits = rev(levels(PILT_Qual_Report$PRE.POST))) +
+  geom_boxplot(outlier.colour = NA) +
+  ggbeeswarm::geom_beeswarm(aes(color = Optimal_choice)) +
+  ggrepel::geom_text_repel(data = . %>% filter(!is.na(outlier)), aes(label = ID)) +
+  scale_colour_gradient(low = "blue", high = "red") +
+  labs(title = "Participant average trial outcome throughout PILT") +
+  ylab("Correctness in outcome") +
+  xlab("PRE or POST")
+
+PILT_Qual_Report %>%
+  group_by(PRE.POST) %>%
+  mutate(outlier = ifelse(is_outlier(Response.time), PRE.POST, as.numeric(NA))) %>%
+  ggplot(aes(x = factor(PRE.POST), Response.time)) +
+  scale_x_discrete(limits = rev(levels(PILT_Qual_Report$PRE.POST))) +
+  geom_boxplot(outlier.colour = NA) +
+  ggbeeswarm::geom_beeswarm(aes(color = Response.time)) +
+  ggrepel::geom_text_repel(data = . %>% filter(!is.na(outlier)), aes(label = ID)) +
+  scale_colour_gradient(low = "blue", high = "red") +
+  labs(title = "Participant average response time throughout PILT") +
+  ylab("Response time") +
+  xlab("PRE or POST")
+
+ggplot(PILT_Qual_Report, aes(x = Response.time)) +
+  geom_histogram() +
+  xlab("Response time") +
+  ylab("Frequency") +
+  labs(title = "articipant average response time throughout PILT") +
+  ylab("Response time")
+```
+
+#Chunk 5: Further preprocessing the dataframe 
+
+```{r Chunk 5 - Further preprocessing, message=FALSE, warning=FALSE, include=FALSE}
+
+# create overall summary for statistical analysis
+# Create another non-summary to plot the curve (further down)
+
+PILT$loss_out <- as.numeric(PILT$loss_out)
+PILT$win_out <- as.numeric(PILT$win_out)
+PILT$reaction_time <- as.numeric(PILT$reaction_time)
+PILT$RT_hits <- as.numeric(PILT$RT_hits)
+
+PILT_Analysis_ReportLME <- PILT %>%
+  group_by(ID, PRE.POST, trial_type) %>%
+  summarise(Optimal.choice = sum(Optimal_choice, na.rm = TRUE), Response.time = mean(reaction_time, na.rm = TRUE), Optimal.choice.perc = mean(Optimal_choice, na.rm = TRUE)*100, response.time.corr = mean(RT_hits, na.rm = TRUE))
+
+# Divide optimal choices by the total number of trials across all blocks (i.e., 40 * 3, since the first 20 trials are being excluded.)
+
+setwd("C:/Users/micha/Desktop/DemographicData")
+
+PILT_Analysis_ReportLME$PRE.POST <- recode_factor(PILT_Analysis_ReportLME$PRE.POST, "PRE" = "Baseline")
+
+PILT_Analysis_ReportLME$PRE.POST <- recode_factor(PILT_Analysis_ReportLME$PRE.POST, "POST" = "Post")
+
+PILT_Analysis_ReportLME$trial_type <- as.factor(PILT_Analysis_ReportLME$trial_type)
+
+##
+
+PILT_Analysis_ReportLME$trial_type <- recode_factor(PILT_Analysis_ReportLME$trial_type, "2" = "Loss trials")
+
+PILT_Analysis_ReportLME$trial_type <- recode_factor(PILT_Analysis_ReportLME$trial_type, "1" = "Win trials")
+
+Demographics <- read.xlsx("Demo4AnalysisPILT.xlsx")
+
+Demographics$Participant.ID <- as.factor(Demographics$ID)
+
+PILT_Analysis_ReportLME <- merge(PILT_Analysis_ReportLME, Demographics, by = "ID")
+
+## Add in winstotal condition (not win or loss condition)
+
+# Split out pre and post
+
+PILT_Analysis_ReportPostLME <- PILT_Analysis_ReportLME %>% filter(!str_detect(PRE.POST, "Baseline"))
+PILT_Analysis_ReportPreLME <- PILT_Analysis_ReportLME %>% filter(!str_detect(PRE.POST, "Post"))
+
+## Creating and tidying curve data (CurveData and CurveData are used for creating the learning curves)
+
+CurveData <- PILT2
+
+CurveData$PRE.POST <- recode_factor(CurveData$PRE.POST, "PRE" = "Baseline")
+
+CurveData$PRE.POST <- recode_factor(CurveData$PRE.POST, "POST" = "Post")
+
+CurveData <- merge(CurveData, Demographics, by = "ID")
+
+CurveData <- CurveData %>% filter(!str_detect(PRE.POST, "Baseline"))
+
+CurveData <- CurveData %>% mutate(loss_out2 = case_when((loss_out == 1) ~ "1", (loss_out == 0) ~ "0", TRUE ~ "NA"))
+
+CurveData$loss_out2 <- as.numeric(CurveData$loss_out2)
+CurveData$loss_out2 <- as.numeric(CurveData$loss_out2)
+CurveData$trial_number <- as.numeric(CurveData$trial_number)
+CurveData$run_number <- as.numeric(CurveData$run_number)
+
+rm(PILT, PILT2)
+```
+
+#Chunk 6: Further parsing the curvedata
+
+```{r Chunk 6 - Further parsing the curvedata, message=FALSE, warning=FALSE, include=FALSE}
+
+# Initialize count variable
+count <- 1
+
+# Initialize previous run number variable
+prev_run <- NULL
+
+# Initialize output vector
+output <- vector()
+
+# Iterate over each row of the data frame
+for (i in 1:nrow(CurveData)) {
+  # Check if the 'run_number' has changed from the previous row
+  if (!is.null(prev_run) && CurveData$run_number[i] != prev_run) {
+    count <- 1
+  }
+
+  # Check if the 'trial_type' column contains the specific value (1)
+  if (CurveData$trial_type[i] == 1) {
+    output <- c(output, count)
+    count <- count + 1
+  } else {
+    output <- c(output, NA)
+  }
+
+  # Update previous run number
+  prev_run <- CurveData$run_number[i]
+}
+
+# Add the output vector as a new column ('win_trial_count') to the data frame
+CurveData$win_trial_count <- output
+
+###
+
+# Initialize count variable
+count <- 1
+
+# Initialize previous run number variable
+prev_run <- NULL
+
+# Initialize output vector
+output <- vector()
+
+# Iterate over each row of the data frame
+for (i in 1:nrow(CurveData)) {
+  # Check if the 'run_number' has changed from the previous row
+  if (!is.null(prev_run) && CurveData$run_number[i] != prev_run) {
+    count <- 1
+  }
+
+  # Check if the 'trial_type' column contains the specific value (1)
+  if (CurveData$trial_type[i] == 2) {
+    output <- c(output, count)
+    count <- count + 1
+  } else {
+    output <- c(output, NA)
+  }
+
+  # Update previous run number
+  prev_run <- CurveData$run_number[i]
+}
+
+# Add the output vector as a new column ('loss_trial_count') to the data frame
+CurveData$loss_trial_count <- output
+
+counts2 <- table(CurveData$loss_trial_count)
+counts3 <- table(CurveData$win_trial_count)
+
+print(counts2)
+print(counts3)
+# Note that there appears to be slightly more win trials overall than loss trials.
+
+rm(PILT, PILT2, count, i, output, prev_run, unique_strings, value_to_remove, value_to_remove2, summary)
+
+## Variable conversion
+
+CurveData$loss_out <- as.numeric(CurveData$loss_out)
+CurveData$win_out <- as.numeric(CurveData$win_out)
+
+## Now create reports and merge
+
+WinCurveReport <- CurveData %>%
+  group_by(Allocation, win_trial_count, trial_type) %>%
+  summarise(Optimal.choice = mean(Optimal_choice, na.rm = TRUE)*100, SE = sd(Optimal_choice, na.rm = TRUE) / sqrt(n()) * 100)
+
+WinCurveReport_clean <- WinCurveReport[complete.cases(WinCurveReport), ]
+
+names(WinCurveReport_clean)[2] <- "trial_number"
+
+LossCurveReport <- CurveData %>%
+  group_by(Allocation, loss_trial_count, trial_type) %>%
+  summarise(Optimal.choice = mean(loss_out2, na.rm = TRUE) * 100,SE = sd(Optimal_choice, na.rm = TRUE) / sqrt(n()) * 100)
+
+LossCurveReport_clean <- LossCurveReport[complete.cases(LossCurveReport), ]
+
+names(LossCurveReport_clean)[2] <- "trial_number"
+
+rm(LossCurveReport, WinCurveReport)
+
+CompleteCurve <- bind_rows(WinCurveReport_clean, LossCurveReport_clean)
+
+## Create final df for Learning Curve
+
+CompleteCurve$Grp <- paste(CompleteCurve$Allocation, CompleteCurve$trial_type, sep = "_")
+
+```
+
+#Chunk 7: Generation of figures for report
+
+```{r Chunk 7 - Generation of figures for report, echo=FALSE}
+
+# Learning curve for publication
+
+CurveUnified <- ggplot(CompleteCurve, aes(trial_number, Optimal.choice, group = Grp, colour = Allocation, linetype = Allocation)) +
+  geom_segment(aes(x = 10, xend = 30, y = 50, yend = 50), linetype = "dotted", color = "azure3") +
+  geom_vline(xintercept = 10, linetype = "dotted", color = "azure3") +
+  geom_line() +
+    geom_point(aes(shape = Allocation, linetype = NA), size = 2.75, alpha = 0.77) +
+  geom_ribbon(aes(
+    ymin = Optimal.choice - SE,
+    ymax = Optimal.choice + SE, fill = Allocation
+  ), color = NA, alpha = 0.11, show.legend = FALSE) +
+  theme_minimal() +
+  scale_shape_manual(values = c(19, 15)) +
+  scale_color_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2") +
+  ylab("High probability stimulus selected (%)\n") +
+  xlab("Trial number\n") +
+  annotate("text", x = 15, y = 70, label = "\nWin trials", size = 3.5, color = "#333333") +
+  annotate("text", x = 15, y = 16, label = "\nLoss trials", size = 3.5, color = "#333333") +
+  theme(text = element_text(size = 12), plot.margin = unit(c(0, 0, 0, 0), "cm"), axis.title = element_text(size = 12), legend.text = element_text(size = 10), axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 10.5), legend.position = c(0.875, 0.59), legend.title = element_blank())
+
+## Boxplot for loss paradigm ~ Optimal Choices for loss %
+
+PILT_Analysis_ReportPostLMELoss <- PILT_Analysis_ReportPostLME %>% filter(!str_detect(trial_type, "Win trials"))
+
+Boxplot_All <- PILT_Analysis_ReportPostLMELoss %>% ggplot(aes(x = Allocation, y = Optimal.choice.perc, fill = Allocation)) +
+    stat_slab(side = "right", scale = 0.5,show.legend = F,
+            position = position_dodge(width = .8), alpha = 0.5,
+            aes(fill_ramp = stat(level)),.width = c(.50, .95,1))+
+  geom_boxplot(width = 0.2, outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  geom_signif(
+    comparisons = list(c("ACTIVE", "PLACEBO")),
+    p.adjust.method = "bonferroni",
+    map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05, " " = 0.20),
+    margin_top = 0.05, textsize = 8) +
+  labs(title = " ") +
+  ylab("Optimal choices (%) - Loss trials\n") +
+  xlab(" ") +
+  theme_minimal() +
+  theme(legend.position = "none",text = element_text(size = 14), axis.text.y=element_text(size = 14), axis.title=element_text(size=20), axis.text.x = element_text(size = 14), strip.text = element_blank())+
+  stat_boxplot(
+    geom = "errorbar",
+    width = 0.15)+
+  geom_point(position = position_jitternudge(width = 0.07, x = -0.3, seed = 123, nudge.from
+="jittered"), aes(color = Allocation, shape = Allocation), size = 3.25, stroke = 0.2, alpha = 0.5)+
+    scale_shape_manual(values = c(19, 15))
+
+Graph4 <- plot_grid(CurveUnified, PlotGraph, rel_widths = c(2, 1.0), labels = c("A", "B"))
+
+## Plot for response time across paradigms
+
+## I have changed to two * manually as this is what matches the EMM tests below.
+
+Boxplot_RT <- PILT_Analysis_ReportPostLMELoss %>% ggplot(aes(x = Allocation, y = Response.time, fill = Allocation)) +
+    stat_slab(side = "right", scale = 0.5,show.legend = F,
+            position = position_dodge(width = .8), alpha = 0.5,
+            aes(fill_ramp = stat(level)),.width = c(.50, .95,1))+
+  geom_boxplot(width = 0.2, outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  geom_signif(
+    comparisons = list(c("ACTIVE", "PLACEBO")),
+    p.adjust.method = "bonferroni",
+    map_signif_level = c("***" = 0.001, "**" = 0.01, "**" = 0.05, " " = 0.20),
+    margin_top = 0.05, textsize = 8) +
+  labs(title = " ") +
+  ylab("Time to choice (ms) - Loss trials\n") +
+  xlab(" ") +
+  theme_minimal() +
+  theme(legend.position = "none",text = element_text(size = 14), axis.text.y=element_text(size = 14), axis.title=element_text(size=20), axis.text.x = element_text(size = 14), strip.text = element_blank())+
+  stat_boxplot(
+    geom = "errorbar",
+    width = 0.15)+
+  geom_point(position = position_jitternudge(width = 0.07, x = -0.3, seed = 123, nudge.from
+="jittered"), aes(color = Allocation, shape = Allocation), size = 3.25, stroke = 0.2, alpha = 0.5)+
+    scale_shape_manual(values = c(19, 15))
+
+#PlotGraphRTCurve <- PILT_Analysis_ReportPostLMELoss %>%
+#  group_by(Allocation) %>%
+#  ggplot(aes(x = Response.time, y = Allocation, fill = ..x..)) +
+#  geom_density_ridges_gradient(scale = 2, rel_min_height = 0.01) +
+#      scale_fill_viridis(name = "Response time", option = "F", alpha = 0.98) +
+#    ylab("Response density\n\n") +
+#  xlab("Time to choice (ms) - Loss trials\n\n") +
+#  theme_minimal()+
+#  theme(legend.position="none")+
+#  xlim(0,2750)+
+#  geom_segment(aes(x = 2650, y = 1, xend = 2650, yend = 2, group = "segment"))+
+#  geom_segment(aes(x = 2650, y = 1, xend = 2625, yend = 1, group = "segment")) +
+#  geom_segment(aes(x = 2650, y = 2, xend = 2625, yend = 2, group = "segment"))+
+#  geom_text(aes(x = 2700, label = "*", y = 1.45), colour = "Black", size = 6.2)+
+#  geom_text(aes(x = 2700, label = "*", y = 1.55), colour = "Black", size = 6.2)
+
+
+
+```
+
+#Chunk 8: ANCOVA-type LME inferrential analyses, emmeans and descriptive stats
+
+```{r Chunk 8 - ANCOVA-type LME inferrential analyses, emmeans and descriptive stats, echo=FALSE}
+
+# Generating models with pre regressors
+
+#
+
+ANCOdf1 <- PILT_Analysis_ReportPostLME[c("Allocation", "Participant.ID", "Optimal.choice", "Response.time", "trial_type")]
+
+ANCOdf1 <- rename(ANCOdf1, Optimal_choice_Post = Optimal.choice)
+ANCOdf1 <- rename(ANCOdf1, RTPost = Response.time)
+
+ANCOdf2 <- PILT_Analysis_ReportPreLME[c("Allocation", "Participant.ID", "Optimal.choice", "Response.time", "trial_type")]
+
+ANCOdf2 <- rename(ANCOdf2, Optimal_choice_Pre = Optimal.choice)
+ANCOdf2 <- rename(ANCOdf2, RTPre = Response.time)
+
+ANCOdfcomp <- left_join(ANCOdf1, ANCOdf2, by = c("Participant.ID", "Allocation", "trial_type"))
+
+
+ANCOVA_Post_Optimal <- aov(Optimal_choice_Post ~ Allocation + trial_type + Allocation:trial_type + Optimal_choice_Pre + Error(Participant.ID), data = ANCOdfcomp)
+
+summary(ANCOVA_Post_Optimal)
+
+
+#### Mixed effects ANCOVA - RT
+
+ANCOVA_Post_RT <- aov(RTPost ~ Allocation + trial_type + RTPre + Allocation:trial_type + Error(Participant.ID), data = ANCOdfcomp)
+
+summary(ANCOVA_Post_RT)
+
+## EMM
+
+multicom_1 <- ANCOdfcomp %>%
+  group_by(trial_type) %>%
+  emmeans_test(Optimal_choice_Post ~ Allocation, p.adjust.method = "holm", detailed = TRUE)
+print(multicom_1)
+
+multicom_1 <- ANCOdfcomp %>%
+  group_by(trial_type) %>%
+  emmeans_test(RTPost ~ Allocation, p.adjust.method = "holm", detailed = TRUE)
+print(multicom_1)
+
+
+## Descriptives
+
+ANCOdf1 %>%
+  group_by(trial_type, Allocation) %>%
+  get_summary_stats(Optimal_choice_Post, type = "mean_sd")
+
+ANCOdf1 %>%
+  group_by(trial_type, Allocation) %>%
+  get_summary_stats(RTPost, type = "mean_sd")
+
+
+#######
+```
+
+
+#Chunk 9: Depreciated code
+
+```{r Chunk 8 - ANCOVA-type LME inferrential analyses, emmeans and descriptive stats, echo=FALSE}
+
+# Depreciated ANOVA:
+# ancova_model <- aov(Optimal_choice_Post ~ Allocation + trial_type + Optimal_choice_Pre + Allocation:trial_type, data = ANCOdfcomp)
+
+# PILT_LMER <- lmer(RTPost ~ Allocation + trial_type + RTPre + Allocation:trial_type + (1 | Participant.ID), data = ANCOdfcomp)
+# confint(PILT_LMER)
+# anova(PILT_LMER, ddf = "Kenward-Roger")
+# ANCOVA_Pre_Optimal <- aov(Optimal_choice_Pre ~ Allocation + trial_type + Error(Participant.ID), data = ANCOdfcomp)
+# summary(ANCOVA_Pre_Optimal)
+# ANCOVA_Pre_RT <- aov(RTPre ~ Allocation + trial_type + Error(Participant.ID), data = ANCOdfcomp)
+# summary(ANCOVA_Pre_RT)
+
+# Depreciated learning curve:
+
+CurveUnified <- CurveData %>%
+  group_by(trial_number, run_number, Allocation) %>%
+  summarize(value = mean(win_out, na.rm = TRUE) * 100, value2 = mean(loss_out, na.rm = TRUE) * 100) %>%
+  ggplot(aes(T, value, group = Allocation)) +
+  scale_color_brewer(palette = "Set2") +
+  stat_smooth(aes(x = trial_number, y = value, color = Allocation, linetype = Allocation),
+    method = "lm",
+    formula = y ~ poly(x, 21), se = FALSE, show_guide = FALSE, size = 0.6, alpha = 0.15
+  ) +
+  stat_smooth(aes(x = trial_number, y = value2, color = Allocation, linetype = Allocation),
+    method = "lm",
+    formula = y ~ poly(x, 21), se = FALSE, show_guide = TRUE, size = 0.6, alpha = 0.15
+  ) +
+  labs(title = "") +
+  ylab("High probability stimulus selected (%)\n") +
+  xlab("Trial number") +
+  theme_minimal() +
+  theme(text = element_text(size = 12), legend.position = "right", plot.margin = unit(c(0, 0, 0, 0), "cm"), axis.title = element_text(size = 12), legend.text = element_text(size = 10), axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 10.5)) +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "grey") +
+  geom_vline(xintercept = 20, linetype = "dashed", color = "grey") +
+  annotate("text", x = 30, y = 70, label = "\nHigh probability win", size = 3.5, color = "#333333") +
+  annotate("text", x = 30, y = 15, label = "\nHigh probability loss", size = 3.5, color = "#333333")
+```

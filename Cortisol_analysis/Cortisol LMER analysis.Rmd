@@ -1,0 +1,65 @@
+---
+title: "Cortisol LMER"
+author: "Michael Colwell"
+date: "2022-11-14"
+output: html_document
+---
+
+
+```{r libraries, echo=FALSE, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(gtools)
+library(knitr)
+library(data.table)
+library(ggplot2)
+library(car)
+library(ggbeeswarm)
+library(ggrepel)
+library(readxl)
+library(openxlsx)
+library("ez")
+library(rstatix)
+library(emmeans)
+library(FSA)
+library(coin)
+library(lmerTest)
+```
+
+
+
+```{r pressure, echo=FALSE}
+
+setwd("C:/Path")
+
+CortisolM <- read.xlsx("Cortisols_results_FENCOG_all_samples_simple.xlsx")
+
+setwd("C:/Path")
+
+Demographics <- read.xlsx("Demo4Analysis.xlsx")
+
+Demographics$Participant.ID <- as.factor(Demographics$Participant.ID)
+
+CortisolM <- merge(CortisolM, Demographics, by = "Participant.ID")
+
+rm(Demographics)
+```
+
+```{r}
+
+Model1 <- with(CortisolM, lmer(MeanConc ~ Allocation + Time + Allocation:Time + (1 | Participant.ID),
+  control = lmerControl(optimizer = "bobyqa")
+))
+
+summary(Model1, conf.int = TRUE)
+print(Model1)
+
+CortisolM %>%
+  group_by(Allocation, Time) %>%
+  get_summary_stats(MeanConc, type = "mean_sd")
+
+CortisolM$Time <- as.factor(CortisolM$Time)
+
+ConcAnov <- ezANOVA(data = CortisolM, dv = MeanConc, between = Allocation, within = Time, wid = Participant.ID, return_aov = T)
+print(ConcAnov)
+```

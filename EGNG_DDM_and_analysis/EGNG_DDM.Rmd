@@ -1,0 +1,329 @@
+---
+title: "PILT_Comp_Analysis_FENCOG"
+author: "Michael Colwell"
+date: '2023-04-09'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Quality check and analysis scripts for OMT data in FENCOG project.
+
+```{r libraries, echo=FALSE, include=FALSE}
+library(dplyr)
+library(tidyverse)
+library(gtools)
+library(knitr)
+library(data.table)
+library(ggplot2)
+library(car)
+library(ggbeeswarm)
+library(ggrepel)
+library(readxl)
+library(data.table)
+library(openxlsx)
+library(ggpubr)
+library(rstatix)
+library("ez")
+library(ggsignif)
+library(RColorBrewer)
+library(emmeans)
+library(plotrix)
+library(sdamr)
+library(cowplot)
+library(lme4)
+library(stringr)
+library(effectsize)
+library(lmerTest)
+```
+
+## Set Dir and load in file
+
+```{r b0, echo=FALSE, include=TRUE}
+setwd("C:/Users/micha/Desktop/EGNG_DDM_and_analysis")
+
+MasterDDM <- read.csv("All_params.csv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+##Parsing + Demographic inclusion
+
+```{r b0, echo=FALSE, include=TRUE}
+MasterDDM$a.1. <- log(MasterDDM$a.1.)
+MasterDDM$v.1. <- MasterDDM$v.1.
+MasterDDM$t.1. <- log(MasterDDM$t.1.)
+MasterDDM$z.1. <- log(MasterDDM$z.1.)
+MasterDDM$dc.1. <- MasterDDM$dc.1. + 20
+MasterDDM$dc.1. <- log(MasterDDM$dc.1.)
+
+## Demographics
+
+setwd("C:/Users/micha/Desktop/DemographicData")
+
+Demographics <- read.xlsx("Demo4Analysis.xlsx")
+
+Demographics$Participant.ID <- as.factor(Demographics$Participant.ID)
+
+MasterDDM <- merge(MasterDDM, Demographics, by = "Participant.ID")
+
+removal_df <- subset(MasterDDM, Participant.ID != "P008" & Participant.ID != "P001" & Participant.ID != "P011")
+
+MasterDDM <- droplevels(removal_df)
+
+# 8 and 1 for redone
+
+# Split by PRE/POST
+
+MasterDDM_Post <- MasterDDM %>% filter(!str_detect(PRE.POST, "PRE"))
+MasterDDM_Pre <- MasterDDM %>% filter(!str_detect(PRE.POST, "POST"))
+
+rm(MasterPILTc, Demographics)
+```
+
+##Graphs for publication
+
+```{r Chunk 7 - Generation of figures for report, echo=FALSE}
+MasterDDM_Post_Fear <- MasterDDM_Post %>% filter(str_detect(Condition, "Fear"))
+
+Boxplot_beta_all <- MasterDDM_Post_Fear %>% ggplot(aes(x = Allocation, y = z.1., fill = Allocation)) +
+  stat_slab(
+    side = "right", scale = 0.5, show.legend = F,
+    position = position_dodge(width = .8), alpha = 0.5,
+    aes(fill_ramp = stat(level)), .width = c(.50, .95, 1)
+  ) +
+  geom_boxplot(width = 0.2, outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  geom_signif(
+    comparisons = list(c("ACTIVE", "PLACEBO")),
+    p.adjust.method = "holm",
+    map_signif_level = c("****" = 0.0001, "***" = 0.001, "**" = 0.01, "*" = 0.05, "*" = 2), # Manually edited to reflect the EMM
+    margin_top = 0.05, textsize = 10
+  ) +
+  labs(title = " ") +
+  ylab("Log initial choice bias (z*a)\n\n") +
+  xlab("") +
+  theme_minimal() +
+  theme(legend.position = "none", text = element_text(size = 14), axis.title = element_text(size = 16), strip.text = element_blank(), plot.margin = margin(t = 0, r = -20, l = 0, b = 0)) +
+  stat_boxplot(
+    geom = "errorbar",
+    width = 0.15
+  ) +
+  geom_point(position = position_jitternudge(
+    width = 0.07, x = -0.3, seed = 123,
+    nudge.from = "jittered"
+  ), aes(color = Allocation, shape = Allocation), size = 3.25, stroke = 0.2, alpha = 0.5) +
+  scale_shape_manual(values = c(19, 15)) +
+  ylim(-2, -0.3)
+
+###
+
+MasterDDM_Post$Condition <- fct_relevel(MasterDDM_Post$Condition, "Control", "Happy", "Fear")
+
+Figure1 <- MasterDDM_Post %>%
+  group_by(PRE.POST, Allocation, Condition) %>%
+  summarize(value = mean(z.1.), SE = std.error(z.1.)) %>%
+  ggplot(aes(Condition, value, group = Allocation)) +
+  scale_color_brewer(palette = "Set2") +
+  geom_errorbar(aes(x = Condition, ymin = value - SE, ymax = value + SE, color = Allocation), width = 0.25) +
+  geom_point(aes(color = Allocation, shape = Allocation), size = 2.4, alpha = 0.8) +
+  geom_line(aes(color = Allocation, linetype = Allocation), size = 0.9) +
+  geom_ribbon(aes(
+    ymin = value - SE,
+    ymax = value + SE, fill = Allocation
+  ), color = NA, alpha = 0.095, show.legend = FALSE) +
+  geom_signif(
+    comparisons = list(c("ACTIVE", "PLACEBO")),
+    p.adjust.method = "bonferroni",
+    map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05, " " = 2),
+    margin_top = 0.05
+  ) +
+  scale_color_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "") +
+  ylab("Log initial choice bias (z)\n\n") +
+  xlab("Emotional interference condition\n\n\n") +
+  theme_minimal() +
+  scale_shape_manual(values = c(19, 15)) +
+  geom_segment(aes(x = 3.2, y = -1.07, xend = 3.2, yend = -1.4, group = "segment")) +
+  geom_segment(aes(x = 3.2, y = -1.07, xend = 3.15, yend = -1.07, group = "segment")) +
+  geom_segment(aes(x = 3.2, y = -1.4, xend = 3.15, yend = -1.4, group = "segment")) +
+  geom_text(aes(x = 3.3, label = "*", y = -1.25), colour = "Black", size = 6.2)
+
+
+
+
+PlotFear <- MasterDDM_Post %>% ggplot(aes(x = Allocation, y = dc.1., fill = Allocation)) +
+  geom_boxplot(width = 0.25, outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  geom_signif(
+    comparisons = list(c("ACTIVE", "PLACEBO")),
+    textsize = 5,
+    p.adjust.method = "holm",
+    map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05, " " = 2),
+    margin_top = 0.05,
+  ) +
+  labs(title = " ") +
+  ylab("Log outcome sensitivity (ρ) - Loss trials\n") +
+  xlab(" ") +
+  theme_minimal() +
+  theme(legend.position = "none", plot.margin = unit(c(0, 0, 0, 0), "cm"), axis.title = element_text(size = 14), text = element_text(size = 14), axis.text.x = element_text(size = 14), axis.text.y = element_text(size = 14)) +
+  stat_boxplot(
+    geom = "errorbar",
+    width = 0.15
+  ) +
+  geom_point(position = position_jitternudge(
+    jitter.width = .20, nudge.x = -.4
+  ), aes(color = Allocation), alpha = 0.60)
+
+
+PlotGraphInvers <- MasterPILTc_CPost %>% ggplot(aes(x = Allocation, y = Invtemp_recipmodel, fill = Allocation)) +
+  facet_wrap(~ as.factor(Trial_type), nrow = 1) +
+  geom_boxplot(width = 0.25, outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  geom_signif(
+    comparisons = list(c("ACTIVE", "PLACEBO")),
+    textsize = 5,
+    p.adjust.method = "holm",
+    map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05, " " = 2),
+    margin_top = 0.05,
+  ) +
+  labs(title = " ") +
+  ylab("Log inverse temperature (β) - Loss trials\n") +
+  xlab(" ") +
+  theme_minimal() +
+  theme(legend.position = "none", plot.margin = unit(c(0, 0, 0, 0), "cm"), axis.title = element_text(size = 14), text = element_text(size = 14), axis.text.x = element_text(size = 14), axis.text.y = element_text(size = 14)) +
+  stat_boxplot(
+    geom = "errorbar",
+    width = 0.15
+  ) +
+  geom_point(position = position_jitternudge(
+    jitter.width = .20, nudge.x = -.4
+  ), aes(color = Allocation), alpha = 0.60)
+
+PlotGraphLearningRate <- MasterPILTc_CPost %>% ggplot(aes(x = Allocation, y = LR_recipmodel, fill = Allocation)) +
+  facet_wrap(~ as.factor(Trial_type), nrow = 1) +
+  geom_boxplot(width = 0.25, outlier.shape = NA) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_color_brewer(palette = "Set2") +
+  geom_signif(
+    comparisons = list(c("ACTIVE", "PLACEBO")),
+    textsize = 5,
+    p.adjust.method = "holm",
+    map_signif_level = c("***" = 0.001, "**" = 0.01, "*" = 0.05, " " = 2),
+    margin_top = 0.05,
+  ) +
+  labs(title = " ") +
+  ylab("Log learning rate (α)\n") +
+  xlab(" ") +
+  theme_minimal() +
+  theme(legend.position = "none", plot.margin = unit(c(0, 0, 0, 0), "cm"), axis.title = element_text(size = 14), text = element_text(size = 14), axis.text.x = element_text(size = 14), axis.text.y = element_text(size = 14)) +
+  stat_boxplot(
+    geom = "errorbar",
+    width = 0.15
+  ) +
+  geom_point(position = position_jitternudge(
+    jitter.width = .20, nudge.x = -.4
+  ), aes(color = Allocation), alpha = 0.60)
+````
+  
+
+```{r b0, echo=FALSE, include=TRUE}
+# ANCOVA model setup and analysis
+
+ANCOdf1 <- MasterDDM_Post[c("Allocation", "Participant.ID", "Condition", "a.1.", "v.1.", "t.1.", "z_trans.1.", "z.1.", "dc.1.")]
+
+ANCOdf1 <- rename(ANCOdf1, Boundary.Sep.Post = a.1.)
+ANCOdf1 <- rename(ANCOdf1, Drift.Rate.Post = v.1.)
+ANCOdf1 <- rename(ANCOdf1, ND.time.Post = t.1.)
+ANCOdf1 <- rename(ANCOdf1, I.Bias.trans.Post = z_trans.1.)
+ANCOdf1 <- rename(ANCOdf1, I.Bias.Post = z.1.)
+ANCOdf1 <- rename(ANCOdf1, Drift.Criterion.Post = dc.1.)
+
+ANCOdf2 <- MasterDDM_Pre[c("Allocation", "Participant.ID", "Condition", "a.1.", "v.1.", "t.1.", "z_trans.1.", "z.1.", "dc.1.")]
+
+ANCOdf2 <- rename(ANCOdf2, Boundary.Sep.Pre = a.1.)
+ANCOdf2 <- rename(ANCOdf2, Drift.Rate.Pre = v.1.)
+ANCOdf2 <- rename(ANCOdf2, ND.time.Pre = t.1.)
+ANCOdf2 <- rename(ANCOdf2, I.Bias.trans.Pre = z_trans.1.)
+ANCOdf2 <- rename(ANCOdf2, I.Bias.Pre = z.1.)
+ANCOdf2 <- rename(ANCOdf2, Drift.Criterion.Pre = dc.1.)
+
+ANCOdfcomp <- left_join(ANCOdf1, ANCOdf2, by = c("Participant.ID", "Allocation", "Condition"))
+
+# Model 1 - Boundary Sep
+
+ANCOVA_Boundary <- aov(Boundary.Sep.Post ~ Allocation + Condition + Allocation:Condition + Boundary.Sep.Pre + Error(Participant.ID), data = ANCOdfcomp)
+
+summary(ANCOVA_Boundary)
+
+# Model 2 - Drift Rate
+
+ANCOVA_Drift <- aov(Drift.Rate.Post ~ Allocation + Condition + Allocation:Condition + Drift.Rate.Post + Error(Participant.ID), data = ANCOdfcomp)
+
+summary(ANCOVA_Drift)
+
+# Model 3 - Non-decision time
+
+ANCOVA_NDT <- aov(ND.time.Post ~ Allocation + Condition + Allocation:Condition + ND.time.Pre + Error(Participant.ID), data = ANCOdfcomp)
+
+summary(ANCOVA_NDT)
+
+# Model 4 - Choice Bias Transformed (depreciated)
+
+#ANCOVA_CBT <- aov(I.Bias.trans.Post ~ Allocation + Condition + Allocation:Condition + I.Bias.trans.Pre + Error(Participant.ID), data #= ANCOdfcomp)
+
+#summary(ANCOVA_CBT)
+
+#ANCOdfcomp %>%
+#  group_by(Condition) %>%
+#  emmeans_test(I.Bias.trans.Post ~ Allocation, p.adjust.method = "holm", detailed = TRUE)
+
+# Model 5 - Choice bias
+
+ANCOVA_CB <- aov(I.Bias.Post ~ Allocation + Condition + Allocation:Condition + I.Bias.Pre + Error(Participant.ID), data = ANCOdfcomp)
+
+lm_model <- lmer(I.Bias.Post ~ Allocation + Condition + Allocation:Condition + I.Bias.Pre + (1 | Participant.ID), data = ANCOdfcomp)
+
+summary(ANCOVA_CB)
+
+eta_squared(lm_model, ci = 0.95, alternative="two.sided")
+
+#Significant effect - proceed to analysing post data as post hoc
+
+# Calculate estimated marginal means (EMMs) for Allocation*Condition interaction
+
+lm_model <- lm(I.Bias.Post ~ Allocation + Condition + Allocation:Condition, data = ANCOdfcomp)
+EMM_2 <- emmeans(lm_model, ~Allocation | Condition)
+
+# Calculate pairwise comparisons for the specified contrasts
+pairwise_comparisons <- pairs(EMM_2, adjust = "holm")
+
+# Print the results
+summary(pairwise_comparisons)
+
+# Calculate effect size using eff_size
+effect_size <- eff_size(EMM_2, sigma = sigma(lm_model), edf = df.residual(lm_model))
+
+# Print the effect size summary
+summary(effect_size)
+
+#Summary descriptive statistics
+
+ANCOdfcomp %>%
+  group_by(Allocation, Condition) %>%
+  get_summary_stats(I.Bias.Post, type = "mean_sd")
+
+# Model 6 - Drift Criterion
+
+ANCOVA_DC <- aov(Drift.Criterion.Post ~ Allocation + Condition + Allocation:Condition + Drift.Criterion.Pre + Error(Participant.ID), data = ANCOdfcomp)
+
+summary(ANCOVA_DC)
+
+###
+
+#####################################################################################
+```
