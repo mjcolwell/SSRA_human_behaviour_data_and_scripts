@@ -165,6 +165,7 @@ MasterAVLT_acc <- MasterAVLT_acc %>% mutate(TrialScoreLog = log(Trial_Score))
 
 ```{r}
 # Total_correct (acc = accuracy)
+# Removal of incomplete datasets (P011 & P041).
 
 removal_df2 <- subset(MasterAVLT_acc, Participant.ID != "P011" & Participant.ID != "P041")
 
