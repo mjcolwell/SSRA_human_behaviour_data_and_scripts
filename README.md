@@ -8,9 +8,9 @@ For any questions or to report any issues, please contact Michael Colwell (micha
 
 If you wish to use our data in your research study, please first contact catherine.harmer@psych.ox.ac.uk.
 
-## Citation
+## DOI
 
-Citation / DOI forthcoming.
+https://doi.org/10.5281/zenodo.8395069
 
 ## Instructions
 
